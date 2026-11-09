@@ -4,6 +4,8 @@ package sing_ebpf
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	LC "github.com/metacubex/mihomo/listener/config"
@@ -45,8 +47,9 @@ func resolveUDPTimeout(configured int64) time.Duration {
 //
 // The old surface had dns-mode and bypass-private-address at the top level,
 // `ipv6-mode: auto|always|off` strings in both sections, `state-capacity` per
-// section, `shared.advanced.tc-priority`, and bypass-port/bypass-port-range for
-// the ports now called exclude-port/exclude-port-range. Each is mapped onto its
+// section, `shared.advanced.tc-priority`, and the separate bypass-port,
+// bypass-port-range, exclude-port-range and include-port-range keys that the
+// merged exclude-port/include-port lists replaced. Each is mapped onto its
 // current equivalent only when the new key is unset, so a config that already
 // uses the new keys is never overridden by a leftover legacy one.
 func applyLegacyOptions(options LC.EBPF) (LC.EBPF, []string, error) {
@@ -68,10 +71,22 @@ func applyLegacyOptions(options LC.EBPF) (LC.EBPF, []string, error) {
 	if !sharedEnabled {
 		options.Shared = LC.EBPFShared{Enabled: options.Shared.Enabled}
 	}
-	foldLegacyPortKeys("local", &options.Local.BypassPort, &options.Local.BypassPortRange,
-		options.Local.LegacyBypassPort, options.Local.LegacyBypassPortRange, &notes)
-	foldLegacyPortKeys("shared", &options.Shared.BypassPort, &options.Shared.BypassPortRange,
-		options.Shared.LegacyBypassPort, options.Shared.LegacyBypassPortRange, &notes)
+	foldLegacyPortList("local", "exclude-port", &options.Local.ExcludePort, []legacyPortSource{
+		{key: "bypass-port", ports: options.Local.LegacyBypassPort},
+		{key: "bypass-port-range", ranges: options.Local.LegacyBypassPortRange},
+		{key: "exclude-port-range", ranges: options.Local.LegacyExcludePortRange},
+	}, &notes)
+	foldLegacyPortList("shared", "exclude-port", &options.Shared.ExcludePort, []legacyPortSource{
+		{key: "bypass-port", ports: options.Shared.LegacyBypassPort},
+		{key: "bypass-port-range", ranges: options.Shared.LegacyBypassPortRange},
+		{key: "exclude-port-range", ranges: options.Shared.LegacyExcludePortRange},
+	}, &notes)
+	foldLegacyPortList("local", "include-port", &options.Local.IncludePort, []legacyPortSource{
+		{key: "include-port-range", ranges: options.Local.LegacyIncludePortRange},
+	}, &notes)
+	foldLegacyPortList("shared", "include-port", &options.Shared.IncludePort, []legacyPortSource{
+		{key: "include-port-range", ranges: options.Shared.LegacyIncludePortRange},
+	}, &notes)
 	if options.DNSMode != "" {
 		if localEnabled && options.Local.DNSMode == "" {
 			options.Local.DNSMode = options.DNSMode
@@ -141,31 +156,40 @@ func applyLegacyOptions(options LC.EBPF) (LC.EBPF, []string, error) {
 	return options, notes, nil
 }
 
-// foldLegacyPortKeys maps bypass-port/bypass-port-range onto the exclude-port
-// keys that replaced them. The current keys win when both spellings are set,
-// like every other legacy key above, and the ignored legacy value gets one
-// note so the operator knows it is no longer doing anything.
-func foldLegacyPortKeys(
-	section string,
-	ports *[]uint16, ranges *[]string,
-	legacyPorts []uint16, legacyRanges []string,
-	notes *[]string,
-) {
-	if len(legacyPorts) > 0 {
-		if len(*ports) > 0 {
-			*notes = append(*notes, section+".exclude-port is set; "+section+".bypass-port was ignored")
-		} else {
-			*ports = legacyPorts
-			*notes = append(*notes, section+".bypass-port is deprecated; use "+section+".exclude-port")
+// legacyPortSource is one deprecated spelling of a port list. Numeric entries
+// belong to bypass-port; every other key holds "start:end" ranges, which are
+// rewritten to the current "start-end" form when they are folded.
+type legacyPortSource struct {
+	key    string
+	ports  []uint16
+	ranges []string
+}
+
+// foldLegacyPortList maps the older port spellings onto the merged key that
+// replaced them. The current key wins when both are set, like every other
+// legacy key above, and each ignored legacy value gets one note so the operator
+// knows it is no longer doing anything.
+func foldLegacyPortList(section, target string, current *[]string, sources []legacyPortSource, notes *[]string) {
+	currentKeySet := len(*current) > 0
+	for _, source := range sources {
+		if len(source.ports) == 0 && len(source.ranges) == 0 {
+			continue
 		}
-	}
-	if len(legacyRanges) > 0 {
-		if len(*ranges) > 0 {
-			*notes = append(*notes, section+".exclude-port-range is set; "+section+".bypass-port-range was ignored")
-		} else {
-			*ranges = legacyRanges
-			*notes = append(*notes, section+".bypass-port-range is deprecated; use "+section+".exclude-port-range")
+		if currentKeySet {
+			*notes = append(*notes, section+"."+target+" is set; "+section+"."+source.key+" was ignored")
+			continue
 		}
+		for _, port := range source.ports {
+			*current = append(*current, strconv.FormatUint(uint64(port), 10))
+		}
+		for _, value := range source.ranges {
+			*current = append(*current, strings.ReplaceAll(value, ":", "-"))
+		}
+		note := section + "." + source.key + " is deprecated; use " + section + "." + target
+		if len(source.ranges) > 0 {
+			note += " with \"start-end\" ranges"
+		}
+		*notes = append(*notes, note)
 	}
 }
 

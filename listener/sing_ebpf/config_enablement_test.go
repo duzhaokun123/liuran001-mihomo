@@ -16,9 +16,9 @@ func TestSharedIgnoresDisabledLocalTemplate(t *testing.T) {
 		options := LC.EBPF{Mode: "shared", Local: LC.EBPFLocal{
 			DNSMode: "invalid", DataPlane: "invalid", CgroupPath: "relative",
 			IPv6Mode: "invalid", StateCapacity: maximumStateCapacity + 1,
-			BypassPortRange: []string{"invalid"}, IncludeUIDRange: []string{"invalid"},
-			IncludePortRange: []string{"invalid"},
-			IncludePackage:   []string{"android-only"}, BypassRuleSet: []string{"missing"},
+			ExcludePort: []string{"invalid"}, IncludeUIDRange: []string{"invalid"},
+			IncludePort:    []string{"invalid"},
+			IncludePackage: []string{"android-only"}, BypassRuleSet: []string{"missing"},
 		}}
 		if explicit {
 			options.Mode = ""
@@ -100,7 +100,7 @@ func TestLocalIgnoresSharedOptions(t *testing.T) {
 			options := LC.EBPF{Mode: mode, Shared: LC.EBPFShared{
 				IPv6: boolPtr(true), DNSMode: "invalid", Interface: []string{"lo"},
 				DataPlane: "invalid", IPv6Mode: "invalid", StateCapacity: maximumStateCapacity + 1,
-				BypassPortRange: []string{"invalid"}, IncludeMACAddress: []string{"invalid"},
+				ExcludePort: []string{"invalid"}, IncludeMACAddress: []string{"invalid"},
 				Advanced: LC.EBPFSharedAdvanced{TCPriority: 99, DataPlane: "invalid"},
 			}}
 			if mode == "enabled" {

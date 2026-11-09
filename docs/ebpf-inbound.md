@@ -103,10 +103,8 @@ listeners:
       include-android-user: []  # Android only
       include-package: []       # Android only
       exclude-package: []       # Android only
-      exclude-port: []
-      exclude-port-range: []  # "start:end"
+      exclude-port: []        # port or "start-end"
       include-port: []        # whitelist; mutually exclusive with exclude-port
-      include-port-range: []  # "start:end"
     shared:
       data-plane: packet_rewrite  # packet_rewrite (default) | socket_assign
       dns-mode: hijack
@@ -121,9 +119,7 @@ listeners:
       include-mac-address: []
       exclude-mac-address: []
       exclude-port: []
-      exclude-port-range: []
       include-port: []
-      include-port-range: []
 ```
 
 The same listener can also be written the way sing-box and the upstream eBPF
@@ -203,15 +199,17 @@ Field behavior:
 - `include-uid`, `include-uid-range`, `exclude-uid`, `exclude-uid-range`:
   UID-based interception policy for the local role. Ranges use `start:end`.
 - Android only: `include-android-user`, `include-package`, `exclude-package`.
-- `exclude-port`, `exclude-port-range` (per role): destination ports that are
-  never intercepted. The previous `bypass-port` / `bypass-port-range` spellings
-  are still accepted: when the new key is unset they are folded into
-  `exclude-port` / `exclude-port-range` and reported at startup, and when both
-  spellings are set the legacy key is ignored with a note.
-- `include-port`, `include-port-range` (per role): the inverse policy. When
+- `exclude-port` (per role): destination ports that are never intercepted.
+  Each entry is a single port or a `start-end` range, and the two spellings may
+  be mixed; `0`, a reversed range and anything past 65535 are rejected at
+  startup. The older `exclude-port-range` (which used `start:end`) and the even
+  older `bypass-port` / `bypass-port-range` are still accepted: when
+  `exclude-port` is unset they are folded into it and reported at startup, and
+  when `exclude-port` is set each leftover legacy key is ignored with a note.
+- `include-port` (per role): the inverse policy, taking the same entries. When
   set, only the listed destination ports are intercepted and every other port
   passes through untouched. It is mutually exclusive with `exclude-port` in the
-  same role and setting both fails listener startup. Both keys expand to one
+  same role and setting both fails listener startup. A range expands to one
   map entry per port per enabled protocol, so the fixed 4096-entry map holds
   2048 ports with `network: [tcp, udp]` and 4096 ports with a single protocol;
   going over fails startup with the compiled entry count. The port decision
@@ -257,8 +255,11 @@ to every enabled role that does not set its own; `local.ipv6-mode` and
 enabled) map to `ipv6`; `local.state-capacity` and `shared.state-capacity`
 size the kernel state maps; `shared.advanced.tc-priority` becomes
 `tc-priority`, and known `shared.advanced.data-plane` values map to
-`shared.data-plane`. `tcp-splice` and `shared.advanced.routing-mark` /
-`routing-table` no longer do anything and are reported once at startup.
+`shared.data-plane`; the separate `exclude-port-range` / `include-port-range`
+and `bypass-port` / `bypass-port-range` lists fold into the merged
+`exclude-port` / `include-port` keys. `tcp-splice` and
+`shared.advanced.routing-mark` / `routing-table` no longer do anything and are
+reported once at startup.
 
 ### What a config reload can change in place
 

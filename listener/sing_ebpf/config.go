@@ -6,6 +6,7 @@ import (
 	"net/netip"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	ECommon "github.com/metacubex/mihomo/common/ebpf"
@@ -262,43 +263,30 @@ func parseHexByte(text string) (byte, error) {
 	return value, nil
 }
 
-func parsePortRanges(name string, ports []uint16, ranges []string) ([]ECommon.PortRange, error) {
-	result := make([]ECommon.PortRange, 0, len(ports)+len(ranges))
-	for _, port := range ports {
-		if port == 0 {
-			return nil, E.New(name, " contains port 0")
-		}
-		result = append(result, ECommon.PortRange{Start: port, End: port})
-	}
-	for _, value := range ranges {
-		separator := strings.IndexByte(value, ':')
-		if separator <= 0 || separator == len(value)-1 {
-			return nil, E.New(name, " invalid range: ", value)
-		}
-		var startValue, endValue uint16
-		startText := value[:separator]
-		endText := value[separator+1:]
-		for _, char := range startText {
-			if char < '0' || char > '9' {
-				return nil, E.New(name, " invalid range start: ", value)
+// parsePortRanges expands a port policy into the closed ranges the data planes
+// compile. Every entry is either a single port or a "start-end" range; the two
+// spellings may be mixed in one list.
+func parsePortRanges(name string, specs []string) ([]ECommon.PortRange, error) {
+	result := make([]ECommon.PortRange, 0, len(specs))
+	for _, value := range specs {
+		startText, endText, isRange := strings.Cut(value, "-")
+		if !isRange {
+			port, err := parsePort(startText)
+			if err != nil {
+				return nil, E.New(name, " invalid port: ", value)
 			}
-			next := startValue*10 + uint16(char-'0')
-			if next < startValue || next == 0 {
-				return nil, E.New(name, " invalid range start: ", value)
-			}
-			startValue = next
+			result = append(result, ECommon.PortRange{Start: port, End: port})
+			continue
 		}
-		for _, char := range endText {
-			if char < '0' || char > '9' {
-				return nil, E.New(name, " invalid range end: ", value)
-			}
-			next := endValue*10 + uint16(char-'0')
-			if next < endValue {
-				return nil, E.New(name, " invalid range end: ", value)
-			}
-			endValue = next
+		startValue, err := parsePort(startText)
+		if err != nil {
+			return nil, E.New(name, " invalid range start: ", value)
 		}
-		if startValue == 0 || startValue > endValue {
+		endValue, err := parsePort(endText)
+		if err != nil {
+			return nil, E.New(name, " invalid range end: ", value)
+		}
+		if startValue > endValue {
 			return nil, E.New(name, " invalid range: ", value)
 		}
 		result = append(result, ECommon.PortRange{Start: startValue, End: endValue})
@@ -320,6 +308,19 @@ func parsePortRanges(name string, ports []uint16, ranges []string) ([]ECommon.Po
 		}
 	}
 	return merged, nil
+}
+
+// parsePort reads one decimal port number, rejecting zero and anything that
+// does not fit in a uint16.
+func parsePort(text string) (uint16, error) {
+	value, err := strconv.ParseUint(text, 10, 16)
+	if err != nil {
+		return 0, err
+	}
+	if value == 0 {
+		return 0, E.New("port 0 is not a valid port")
+	}
+	return uint16(value), nil
 }
 
 func normalizeSharedOptions(options LC.EBPFShared) (LC.EBPFShared, error) {

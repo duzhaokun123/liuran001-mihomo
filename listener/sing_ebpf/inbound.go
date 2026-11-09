@@ -273,19 +273,19 @@ func New(ctx context.Context, options LC.EBPF, tunnel C.Tunnel, additions ...inb
 			return nil, err
 		}
 	}
-	localBypassPort, err := parsePortRanges("local.exclude_port", options.Local.BypassPort, options.Local.BypassPortRange)
+	localBypassPort, err := parsePortRanges("local.exclude_port", options.Local.ExcludePort)
 	if err != nil {
 		return nil, err
 	}
-	sharedBypassPort, err := parsePortRanges("shared.exclude_port", options.Shared.BypassPort, options.Shared.BypassPortRange)
+	sharedBypassPort, err := parsePortRanges("shared.exclude_port", options.Shared.ExcludePort)
 	if err != nil {
 		return nil, err
 	}
-	localIncludePort, err := parsePortRanges("local.include_port", options.Local.IncludePort, options.Local.IncludePortRange)
+	localIncludePort, err := parsePortRanges("local.include_port", options.Local.IncludePort)
 	if err != nil {
 		return nil, err
 	}
-	sharedIncludePort, err := parsePortRanges("shared.include_port", options.Shared.IncludePort, options.Shared.IncludePortRange)
+	sharedIncludePort, err := parsePortRanges("shared.include_port", options.Shared.IncludePort)
 	if err != nil {
 		return nil, err
 	}

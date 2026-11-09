@@ -53,11 +53,14 @@ func TestReadmeDocumentedValues(t *testing.T) {
 		[]string{"aa:bb:cc:dd:ee:ff", "11:22:33:44:55:66"}); err != nil {
 		t.Errorf("README 写的 MAC 格式被拒绝: %v", err)
 	}
-	if _, err := parsePortRanges("local.exclude_port", []uint16{22}, []string{"1000:2000"}); err != nil {
-		t.Errorf("README 写的端口范围被拒绝: %v", err)
+	if _, err := parsePortRanges("local.exclude_port", []string{"22", "1000-2000"}); err != nil {
+		t.Errorf("README 写的 exclude-port 被拒绝: %v", err)
 	}
-	if _, err := parsePortRanges("local.include_port", []uint16{443}, []string{"8000:8100"}); err != nil {
+	if _, err := parsePortRanges("local.include_port", []string{"443", "8000-8100"}); err != nil {
 		t.Errorf("README 写的 include-port 被拒绝: %v", err)
+	}
+	if _, err := parsePortRanges("local.exclude_port", []string{"1000:2000"}); err == nil {
+		t.Error("端口键的旧 start:end 分隔符本应被拒绝 —— README 若这么写就是错的")
 	}
 	// README 说 udp-timeout 默认 300 秒、最小 5 秒
 	if got := resolveUDPTimeout(0); got.Seconds() != 300 {

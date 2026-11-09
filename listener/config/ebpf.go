@@ -51,21 +51,24 @@ type EBPFLocal struct {
 	IncludeAndroidUser   []int          `json:"include-android-user" yaml:"include-android-user" inbound:"include-android-user,omitempty"`
 	IncludePackage       []string       `json:"include-package" yaml:"include-package" inbound:"include-package,omitempty"`
 	ExcludePackage       []string       `json:"exclude-package" yaml:"exclude-package" inbound:"exclude-package,omitempty"`
-	BypassPort           []uint16       `json:"exclude-port" yaml:"exclude-port" inbound:"exclude-port,omitempty"`
-	BypassPortRange      []string       `json:"exclude-port-range" yaml:"exclude-port-range" inbound:"exclude-port-range,omitempty"`
+	// ExcludePort takes a port or a "start-end" range per entry.
+	ExcludePort []string `json:"exclude-port" yaml:"exclude-port" inbound:"exclude-port,omitempty"`
 	// IncludePort restricts interception to the listed destination ports;
-	// every other port passes through untouched. It is mutually exclusive
-	// with the exclude-port keys, and needs the same per-port protocol
-	// expansion, so the 4096-entry map capacity bounds it too.
-	IncludePort      []uint16 `json:"include-port" yaml:"include-port" inbound:"include-port,omitempty"`
-	IncludePortRange []string `json:"include-port-range" yaml:"include-port-range" inbound:"include-port-range,omitempty"`
+	// every other port passes through untouched. It takes the same entries as
+	// ExcludePort, is mutually exclusive with it, and needs the same per-port
+	// protocol expansion, so the 4096-entry map capacity bounds it too.
+	IncludePort []string `json:"include-port" yaml:"include-port" inbound:"include-port,omitempty"`
+
+	// Deprecated: folded into ExcludePort and IncludePort by the listener.
+	LegacyExcludePortRange []string `json:"exclude-port-range,omitempty" yaml:"exclude-port-range" inbound:"exclude-port-range,omitempty"`
+	LegacyIncludePortRange []string `json:"include-port-range,omitempty" yaml:"include-port-range" inbound:"include-port-range,omitempty"`
 
 	// Legacy keys, see EBPF.
 	IPv6Mode      string `json:"ipv6-mode" yaml:"ipv6-mode" inbound:"ipv6-mode,omitempty"`
 	StateCapacity uint32 `json:"state-capacity" yaml:"state-capacity" inbound:"state-capacity,omitempty"`
 
-	// Legacy port keys, folded into BypassPort and BypassPortRange by the
-	// listener unless the exclude-port keys are set.
+	// Legacy port keys, folded into ExcludePort by the listener unless
+	// exclude-port is set.
 	LegacyBypassPort      []uint16 `json:"bypass-port,omitempty" yaml:"bypass-port" inbound:"bypass-port,omitempty"`
 	LegacyBypassPortRange []string `json:"bypass-port-range,omitempty" yaml:"bypass-port-range" inbound:"bypass-port-range,omitempty"`
 }
@@ -90,22 +93,25 @@ type EBPFShared struct {
 	ExcludeSourceCIDR    []netip.Prefix `json:"exclude-source-cidr" yaml:"exclude-source-cidr" inbound:"exclude-source-cidr,omitempty"`
 	IncludeMACAddress    []string       `json:"include-mac-address" yaml:"include-mac-address" inbound:"include-mac-address,omitempty"`
 	ExcludeMACAddress    []string       `json:"exclude-mac-address" yaml:"exclude-mac-address" inbound:"exclude-mac-address,omitempty"`
-	BypassPort           []uint16       `json:"exclude-port" yaml:"exclude-port" inbound:"exclude-port,omitempty"`
-	BypassPortRange      []string       `json:"exclude-port-range" yaml:"exclude-port-range" inbound:"exclude-port-range,omitempty"`
+	// ExcludePort takes a port or a "start-end" range per entry.
+	ExcludePort []string `json:"exclude-port" yaml:"exclude-port" inbound:"exclude-port,omitempty"`
 	// IncludePort restricts interception to the listed destination ports;
-	// every other port passes through untouched. It is mutually exclusive
-	// with the exclude-port keys, and needs the same per-port protocol
-	// expansion, so the 4096-entry map capacity bounds it too.
-	IncludePort      []uint16 `json:"include-port" yaml:"include-port" inbound:"include-port,omitempty"`
-	IncludePortRange []string `json:"include-port-range" yaml:"include-port-range" inbound:"include-port-range,omitempty"`
+	// every other port passes through untouched. It takes the same entries as
+	// ExcludePort, is mutually exclusive with it, and needs the same per-port
+	// protocol expansion, so the 4096-entry map capacity bounds it too.
+	IncludePort []string `json:"include-port" yaml:"include-port" inbound:"include-port,omitempty"`
+
+	// Deprecated: folded into ExcludePort and IncludePort by the listener.
+	LegacyExcludePortRange []string `json:"exclude-port-range,omitempty" yaml:"exclude-port-range" inbound:"exclude-port-range,omitempty"`
+	LegacyIncludePortRange []string `json:"include-port-range,omitempty" yaml:"include-port-range" inbound:"include-port-range,omitempty"`
 
 	// Legacy keys, see EBPF.
 	IPv6Mode      string             `json:"ipv6-mode" yaml:"ipv6-mode" inbound:"ipv6-mode,omitempty"`
 	StateCapacity uint32             `json:"state-capacity" yaml:"state-capacity" inbound:"state-capacity,omitempty"`
 	Advanced      EBPFSharedAdvanced `json:"advanced" yaml:"advanced" inbound:"advanced,omitempty"`
 
-	// Legacy port keys, folded into BypassPort and BypassPortRange by the
-	// listener unless the exclude-port keys are set.
+	// Legacy port keys, folded into ExcludePort by the listener unless
+	// exclude-port is set.
 	LegacyBypassPort      []uint16 `json:"bypass-port,omitempty" yaml:"bypass-port" inbound:"bypass-port,omitempty"`
 	LegacyBypassPortRange []string `json:"bypass-port-range,omitempty" yaml:"bypass-port-range" inbound:"bypass-port-range,omitempty"`
 }
