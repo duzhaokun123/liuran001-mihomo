@@ -144,6 +144,7 @@ const (
 	sharedNetworkFlagBypassPort
 	sharedNetworkFlagFakeIPIPv4
 	sharedNetworkFlagFakeIPIPv6
+	sharedNetworkFlagPortInclude
 )
 
 const sharedNetworkPolicyFlags = sharedNetworkFlagHostIPv4 |

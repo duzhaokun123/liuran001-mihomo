@@ -128,7 +128,11 @@ INLINE bool service_port(__u8 protocol, __u16 port) {
 INLINE bool port_bypassed(const struct sb_ebpf_cgroup_control *config, __u8 protocol, __u16 port) {
     if ((config->flags & SB_EBPF_CGROUP_FLAG_BYPASS_PORT) == 0U) return false;
     struct sb_ebpf_port_key key = {.protocol = protocol, .port = port};
-    return map_lookup(&cgroup_bypass_port, &key) != 0;
+    bool matched = map_lookup(&cgroup_bypass_port, &key) != 0;
+    // An include policy lists the only ports that are intercepted, so a miss
+    // bypasses instead of a hit.
+    if ((config->flags & SB_EBPF_CGROUP_FLAG_PORT_INCLUDE) != 0U) return !matched;
+    return matched;
 }
 
 INLINE bool ipv4_mapped(const __u32 address[4]) {

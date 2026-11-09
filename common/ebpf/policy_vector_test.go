@@ -17,6 +17,8 @@ func TestPolicyVectorEncodesEachDataPlane(t *testing.T) {
 		SharedBypassPrivate: true,
 		LocalBypassPort:     true,
 		SharedBypassPort:    true,
+		LocalPortInclude:    true,
+		SharedPortInclude:   true,
 		BypassIPv4:          true,
 		BypassIPv6:          true,
 		HostIPv4:            true,
@@ -34,6 +36,7 @@ func TestPolicyVectorEncodesEachDataPlane(t *testing.T) {
 	for _, bit := range []uint32{
 		tcFlagIPv4, tcFlagLocalIPv6, tcFlagSharedIPv6, tcFlagTCP, tcFlagUDP,
 		tcFlagLocalBypassPort, tcFlagSharedBypassPort,
+		tcFlagLocalPortInclude, tcFlagSharedPortInclude,
 		1 << 4, 1 << 5, 1 << 6, 1 << 7, 1 << 8, 1 << 9, 1 << 10, 1 << 11,
 		1 << 12, 1 << 13, 1 << 14, 1 << 15, 1 << 16, 1 << 17,
 	} {
@@ -48,7 +51,7 @@ func TestPolicyVectorEncodesEachDataPlane(t *testing.T) {
 		cgroupFlagUIDPolicy, cgroupFlagUIDDefaultBypass, cgroupFlagBypassIPv4,
 		cgroupFlagBypassIPv6, cgroupFlagBypassPrivateAddress, cgroupFlagHostIPv4,
 		cgroupFlagHostIPv6, cgroupFlagFakeIPIPv4, cgroupFlagFakeIPIPv6,
-		cgroupFlagBypassPort, cgroupFlagUDPFlow,
+		cgroupFlagBypassPort, cgroupFlagUDPFlow, cgroupFlagPortInclude,
 	} {
 		if cgroup&bit == 0 {
 			t.Fatalf("cgroup vector omitted flag %#x: %#x", bit, cgroup)
@@ -63,7 +66,7 @@ func TestPolicyVectorEncodesEachDataPlane(t *testing.T) {
 		sharedNetworkFlagIncludeSource, sharedNetworkFlagExcludeSource,
 		sharedNetworkFlagIncludeSourceMAC, sharedNetworkFlagExcludeSourceMAC,
 		sharedNetworkFlagBypassPrivateAddress, sharedNetworkFlagBypassFlowCache,
-		sharedNetworkFlagBypassPort,
+		sharedNetworkFlagBypassPort, sharedNetworkFlagPortInclude,
 		sharedNetworkFlagFakeIPIPv4, sharedNetworkFlagFakeIPIPv6,
 	} {
 		if shared&bit == 0 {
@@ -78,5 +81,26 @@ func TestPolicyVectorSharedBypassPortPresence(t *testing.T) {
 	}
 	if flags := (policyVector{SharedBypassPort: true}).sharedFlags(); flags&sharedNetworkFlagBypassPort == 0 {
 		t.Fatalf("populated shared bypass-port policy omitted flag: %#x", flags)
+	}
+}
+
+func TestPolicyVectorPortIncludePresence(t *testing.T) {
+	if flags := (policyVector{}).tcFlags(); flags&(tcFlagLocalPortInclude|tcFlagSharedPortInclude) != 0 {
+		t.Fatalf("empty port include policy set flags: %#x", flags)
+	}
+	flags := (policyVector{LocalPortInclude: true, SharedPortInclude: true}).tcFlags()
+	if flags&tcFlagLocalPortInclude == 0 || flags&tcFlagSharedPortInclude == 0 {
+		t.Fatalf("port include policy omitted flags: %#x", flags)
+	}
+	if flags := (policyVector{LocalPortInclude: true}).cgroupFlags(); flags&cgroupFlagPortInclude == 0 {
+		t.Fatalf("cgroup port include policy omitted flag: %#x", flags)
+	}
+	if flags := (policyVector{SharedPortInclude: true}).sharedFlags(); flags&sharedNetworkFlagPortInclude == 0 {
+		t.Fatalf("shared port include policy omitted flag: %#x", flags)
+	}
+	// The port maps are fixed when a data plane is created, so an include
+	// policy must never join the runtime-refreshable policy mask.
+	if sharedNetworkPolicyFlags&sharedNetworkFlagPortInclude != 0 {
+		t.Fatalf("port include flag became runtime-refreshable: %#x", sharedNetworkPolicyFlags)
 	}
 }

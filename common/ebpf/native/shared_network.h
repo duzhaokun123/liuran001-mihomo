@@ -37,6 +37,10 @@
 #define SB_SHARED_FLAG_BYPASS_PORT (1U << 15)
 #define SB_SHARED_FLAG_FAKEIP_IPV4 (1U << 16)
 #define SB_SHARED_FLAG_FAKEIP_IPV6 (1U << 17)
+// SB_SHARED_FLAG_PORT_INCLUDE inverts the bypass port map: a flow is bypassed
+// unless its (protocol, port) key is present. Set together with
+// SB_SHARED_FLAG_BYPASS_PORT.
+#define SB_SHARED_FLAG_PORT_INCLUDE (1U << 18)
 
 struct sb_shared_port_key {
     __u8 protocol;

@@ -17,6 +17,8 @@ type policyVector struct {
 	SharedBypassPrivate bool
 	LocalBypassPort     bool
 	SharedBypassPort    bool
+	LocalPortInclude    bool
+	SharedPortInclude   bool
 	BypassIPv4          bool
 	BypassIPv6          bool
 	HostIPv4            bool
@@ -95,6 +97,12 @@ func (v policyVector) tcFlags() uint32 {
 	if v.SharedBypassPort {
 		flags |= tcFlagSharedBypassPort
 	}
+	if v.LocalPortInclude {
+		flags |= tcFlagLocalPortInclude
+	}
+	if v.SharedPortInclude {
+		flags |= tcFlagSharedPortInclude
+	}
 	return flags
 }
 
@@ -141,6 +149,9 @@ func (v policyVector) cgroupFlags() uint32 {
 	}
 	if v.LocalBypassPort {
 		flags |= cgroupFlagBypassPort
+	}
+	if v.LocalPortInclude {
+		flags |= cgroupFlagPortInclude
 	}
 	if v.EnableUDP {
 		flags |= cgroupFlagUDPFlow
@@ -194,6 +205,9 @@ func (v policyVector) sharedFlags() uint32 {
 	}
 	if v.SharedBypassPort {
 		flags |= sharedNetworkFlagBypassPort
+	}
+	if v.SharedPortInclude {
+		flags |= sharedNetworkFlagPortInclude
 	}
 	if v.FakeIPIPv4 {
 		flags |= sharedNetworkFlagFakeIPIPv4

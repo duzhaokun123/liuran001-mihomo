@@ -59,6 +59,11 @@
 #define SB_TC_FLAG_ISOLATED (1U << 19)
 #define SB_TC_FLAG_LOCAL_BYPASS_PORT (1U << 20)
 #define SB_TC_FLAG_SHARED_BYPASS_PORT (1U << 21)
+// The *_PORT_INCLUDE flags invert their bypass port map: a flow is bypassed
+// unless its (protocol, port) key is present. Set together with the matching
+// bypass-port flag.
+#define SB_TC_FLAG_LOCAL_PORT_INCLUDE (1U << 25)
+#define SB_TC_FLAG_SHARED_PORT_INCLUDE (1U << 26)
 // The shared path reads a destination bypass table of its own only once
 // SB_TC_FLAG_SHARED_BYPASS_SEPARATE is set, which userspace does when the local
 // and shared scopes bypass different rule sets. Until then both paths read
@@ -359,8 +364,14 @@ INLINE bool port_bypassed(const struct sb_tc_control *control,
     __u32 flag = shared ? SB_TC_FLAG_SHARED_BYPASS_PORT : SB_TC_FLAG_LOCAL_BYPASS_PORT;
     if ((control->flags & flag) == 0U) return false;
     struct sb_tc_port_key key = {.protocol = flow->protocol, .port = flow->destination_port};
-    if (shared) return map_lookup(&tc_shared_bypass_port, &key) != 0;
-    return map_lookup(&tc_local_bypass_port, &key) != 0;
+    bool matched;
+    if (shared) matched = map_lookup(&tc_shared_bypass_port, &key) != 0;
+    else matched = map_lookup(&tc_local_bypass_port, &key) != 0;
+    // An include policy lists the only ports that are intercepted, so a miss
+    // bypasses instead of a hit.
+    __u32 include = shared ? SB_TC_FLAG_SHARED_PORT_INCLUDE : SB_TC_FLAG_LOCAL_PORT_INCLUDE;
+    if ((control->flags & include) != 0U) return !matched;
+    return matched;
 }
 
 INLINE bool dns_selected(__u8 protocol, __u16 destination_port, __u16 mode) {

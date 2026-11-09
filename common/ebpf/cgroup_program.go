@@ -190,6 +190,7 @@ func (b *CgroupBackend) updateCgroupControl(listenerPort uint16) error {
 		HostIPv4:           len(b.hostIPv4) > 0,
 		HostIPv6:           b.enableIPv6 && len(b.hostIPv6) > 0,
 		LocalBypassPort:    b.runtime.bypass_port_policy,
+		LocalPortInclude:   b.runtime.port_include_policy,
 		FakeIPIPv4:         b.fakeIPIPv4.IsValid(),
 		FakeIPIPv6:         b.fakeIPIPv6.IsValid(),
 	}.cgroupFlags()

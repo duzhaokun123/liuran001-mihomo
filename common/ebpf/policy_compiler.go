@@ -25,6 +25,8 @@ type PolicyConfig struct {
 	ExcludeSourceMAC    []MACAddress
 	LocalBypassPort     []PortRange
 	SharedBypassPort    []PortRange
+	LocalIncludePort    []PortRange
+	SharedIncludePort   []PortRange
 }
 
 // CompiledPolicy is an immutable policy snapshot shared by all eBPF data
@@ -45,6 +47,11 @@ type CompiledPolicy struct {
 	excludeSourceMAC        []MACAddress
 	localBypassPortEntries  []tcPortKey
 	sharedBypassPortEntries []tcPortKey
+	// localPortInclude and sharedPortInclude invert the meaning of the port
+	// tables above: when set, a flow is bypassed unless its (protocol, port)
+	// key is present, instead of only when it is present.
+	localPortInclude  bool
+	sharedPortInclude bool
 }
 
 func CompilePolicy(config PolicyConfig) (CompiledPolicy, error) {
@@ -76,13 +83,15 @@ func CompilePolicy(config PolicyConfig) (CompiledPolicy, error) {
 		len(config.ExcludeSourceMAC) > maxSharedSourceMACPolicyEntries {
 		return CompiledPolicy{}, E.New("eBPF source MAC policy exceeds map capacity")
 	}
-	localBypassPortEntries, err := compilePortPolicy(config.LocalBypassPort, config.EnableTCP, config.EnableUDP)
+	localBypassPortEntries, localPortInclude, err := compilePortPolicy(
+		"local", config.LocalIncludePort, config.LocalBypassPort, config.EnableTCP, config.EnableUDP)
 	if err != nil {
-		return CompiledPolicy{}, E.Cause(err, "compile local eBPF port bypass policy")
+		return CompiledPolicy{}, E.Cause(err, "compile local eBPF port policy")
 	}
-	sharedBypassPortEntries, err := compilePortPolicy(config.SharedBypassPort, config.EnableTCP, config.EnableUDP)
+	sharedBypassPortEntries, sharedPortInclude, err := compilePortPolicy(
+		"shared", config.SharedIncludePort, config.SharedBypassPort, config.EnableTCP, config.EnableUDP)
 	if err != nil {
-		return CompiledPolicy{}, E.Cause(err, "compile shared eBPF port bypass policy")
+		return CompiledPolicy{}, E.Cause(err, "compile shared eBPF port policy")
 	}
 	localForce, err := compileBypassExclude(config.LocalBypassExclude)
 	if err != nil {
@@ -111,15 +120,50 @@ func CompilePolicy(config PolicyConfig) (CompiledPolicy, error) {
 		excludeSourceMAC:        slices.Clone(config.ExcludeSourceMAC),
 		localBypassPortEntries:  localBypassPortEntries,
 		sharedBypassPortEntries: sharedBypassPortEntries,
+		localPortInclude:        localPortInclude,
+		sharedPortInclude:       sharedPortInclude,
 	}, nil
 }
 
-func compilePortPolicy(ranges []PortRange, enableTCP, enableUDP bool) ([]tcPortKey, error) {
-	var entries []tcPortKey
+// compilePortPolicy expands a port policy into the individual (protocol, port)
+// keys the data-plane hash maps hold, because the kernel only ever does an
+// exact lookup. includePorts and bypassPorts are mutually exclusive: a
+// whitelist and a blacklist in one role would leave the meaning of a port that
+// appears in both undefined. The returned bool reports whitelist mode, which
+// the data planes encode as a flag that inverts the lookup result.
+func compilePortPolicy(scope string, includePorts, bypassPorts []PortRange, enableTCP, enableUDP bool) ([]tcPortKey, bool, error) {
+	if len(includePorts) > 0 && len(bypassPorts) > 0 {
+		return nil, false, E.New(scope, ".include-port and ", scope, ".bypass-port are mutually exclusive")
+	}
+	include := len(includePorts) > 0
+	kind := "bypass"
+	ranges := bypassPorts
+	if include {
+		kind = "include"
+		ranges = includePorts
+	}
+	protocols := 0
+	if enableTCP {
+		protocols++
+	}
+	if enableUDP {
+		protocols++
+	}
+	// Count first so an oversized policy reports the real entry count instead
+	// of whichever prefix happened to overflow the map.
+	total := 0
 	for _, portRange := range ranges {
 		if portRange.Start == 0 || portRange.Start > portRange.End {
-			return nil, E.New("invalid eBPF port bypass range")
+			return nil, false, E.New("invalid eBPF ", scope, " port ", kind, " range: ", portRange.Start, ":", portRange.End)
 		}
+		total += int(portRange.End-portRange.Start+1) * protocols
+		if total > tcPortPolicyCapacity {
+			return nil, false, E.New("eBPF ", scope, " port ", kind, " policy compiles to too many map entries: ",
+				total, " > ", tcPortPolicyCapacity)
+		}
+	}
+	entries := make([]tcPortKey, 0, total)
+	for _, portRange := range ranges {
 		for port := uint32(portRange.Start); port <= uint32(portRange.End); port++ {
 			if enableTCP {
 				entries = append(entries, tcPortKey{Protocol: ProtocolTCP, Port: uint16(port)})
@@ -127,10 +171,7 @@ func compilePortPolicy(ranges []PortRange, enableTCP, enableUDP bool) ([]tcPortK
 			if enableUDP {
 				entries = append(entries, tcPortKey{Protocol: ProtocolUDP, Port: uint16(port)})
 			}
-			if len(entries) > tcPortPolicyCapacity {
-				return nil, E.New("eBPF port bypass policy exceeds map capacity")
-			}
 		}
 	}
-	return entries, nil
+	return entries, include, nil
 }

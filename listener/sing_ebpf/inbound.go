@@ -75,6 +75,8 @@ type Inbound struct {
 	sharedExcludeMAC    []ECommon.MACAddress
 	localBypassPort     []ECommon.PortRange
 	sharedBypassPort    []ECommon.PortRange
+	localIncludePort    []ECommon.PortRange
+	sharedIncludePort   []ECommon.PortRange
 	localBypassExclude  []netip.Prefix
 	sharedBypassExclude []netip.Prefix
 	fakeIPIPv4Prefix    netip.Prefix
@@ -279,6 +281,14 @@ func New(ctx context.Context, options LC.EBPF, tunnel C.Tunnel, additions ...inb
 	if err != nil {
 		return nil, err
 	}
+	localIncludePort, err := parsePortRanges("local.include_port", options.Local.IncludePort, options.Local.IncludePortRange)
+	if err != nil {
+		return nil, err
+	}
+	sharedIncludePort, err := parsePortRanges("shared.include_port", options.Shared.IncludePort, options.Shared.IncludePortRange)
+	if err != nil {
+		return nil, err
+	}
 	fakeIPICMPReply, err := normalizeFakeIPICMP(options.FakeIPICMP)
 	if err != nil {
 		return nil, E.Cause(err, "parse fakeip_icmp")
@@ -330,6 +340,8 @@ func New(ctx context.Context, options LC.EBPF, tunnel C.Tunnel, additions ...inb
 		sharedBypassPrivate: options.Shared.BypassPrivateAddress == nil || *options.Shared.BypassPrivateAddress,
 		localBypassPort:     localBypassPort,
 		sharedBypassPort:    sharedBypassPort,
+		localIncludePort:    localIncludePort,
+		sharedIncludePort:   sharedIncludePort,
 		fakeIPICMPReply:     fakeIPICMPReply,
 		tcPriority:          options.TCPriority,
 		sharedOptions:       sharedOptions,
@@ -447,6 +459,8 @@ func (i *Inbound) compilePolicyLocked() error {
 		ExcludeSourceMAC:    i.sharedExcludeMAC,
 		LocalBypassPort:     i.localBypassPort,
 		SharedBypassPort:    i.sharedBypassPort,
+		LocalIncludePort:    i.localIncludePort,
+		SharedIncludePort:   i.sharedIncludePort,
 	})
 	if err != nil {
 		return E.Cause(err, "compile eBPF policy")

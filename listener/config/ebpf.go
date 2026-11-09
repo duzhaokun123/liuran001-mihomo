@@ -53,6 +53,12 @@ type EBPFLocal struct {
 	ExcludePackage       []string       `json:"exclude-package" yaml:"exclude-package" inbound:"exclude-package,omitempty"`
 	BypassPort           []uint16       `json:"bypass-port" yaml:"bypass-port" inbound:"bypass-port,omitempty"`
 	BypassPortRange      []string       `json:"bypass-port-range" yaml:"bypass-port-range" inbound:"bypass-port-range,omitempty"`
+	// IncludePort restricts interception to the listed destination ports;
+	// every other port passes through untouched. It is mutually exclusive
+	// with BypassPort, and needs the same per-port protocol expansion, so the
+	// 4096-entry map capacity bounds it too.
+	IncludePort      []uint16 `json:"include-port" yaml:"include-port" inbound:"include-port,omitempty"`
+	IncludePortRange []string `json:"include-port-range" yaml:"include-port-range" inbound:"include-port-range,omitempty"`
 
 	// Legacy keys, see EBPF.
 	IPv6Mode      string `json:"ipv6-mode" yaml:"ipv6-mode" inbound:"ipv6-mode,omitempty"`
@@ -81,6 +87,12 @@ type EBPFShared struct {
 	ExcludeMACAddress    []string       `json:"exclude-mac-address" yaml:"exclude-mac-address" inbound:"exclude-mac-address,omitempty"`
 	BypassPort           []uint16       `json:"bypass-port" yaml:"bypass-port" inbound:"bypass-port,omitempty"`
 	BypassPortRange      []string       `json:"bypass-port-range" yaml:"bypass-port-range" inbound:"bypass-port-range,omitempty"`
+	// IncludePort restricts interception to the listed destination ports;
+	// every other port passes through untouched. It is mutually exclusive
+	// with BypassPort, and needs the same per-port protocol expansion, so the
+	// 4096-entry map capacity bounds it too.
+	IncludePort      []uint16 `json:"include-port" yaml:"include-port" inbound:"include-port,omitempty"`
+	IncludePortRange []string `json:"include-port-range" yaml:"include-port-range" inbound:"include-port-range,omitempty"`
 
 	// Legacy keys, see EBPF.
 	IPv6Mode      string             `json:"ipv6-mode" yaml:"ipv6-mode" inbound:"ipv6-mode,omitempty"`

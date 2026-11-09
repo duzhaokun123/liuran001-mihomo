@@ -46,6 +46,10 @@ const tcFlagSharedIPv6 = 1 << 18
 const (
 	tcFlagLocalBypassPort  = 1 << 20
 	tcFlagSharedBypassPort = 1 << 21
+	// tcFlagLocalPortInclude / tcFlagSharedPortInclude invert their bypass
+	// table: a flow is bypassed unless its (protocol, port) key is present.
+	tcFlagLocalPortInclude  = 1 << 25
+	tcFlagSharedPortInclude = 1 << 26
 )
 
 const (
@@ -471,8 +475,10 @@ func tcFlags(config TCConfig, policy CompiledPolicy) uint32 {
 		UIDDefaultBypass:    policy.uidDefaultBypass,
 		LocalBypassPrivate:  policy.local.BypassPrivateAddress,
 		SharedBypassPrivate: policy.sharedBypassPrivate,
-		LocalBypassPort:     len(policy.localBypassPortEntries) > 0,
-		SharedBypassPort:    len(policy.sharedBypassPortEntries) > 0,
+		LocalBypassPort:     len(policy.localBypassPortEntries) > 0 || policy.localPortInclude,
+		SharedBypassPort:    len(policy.sharedBypassPortEntries) > 0 || policy.sharedPortInclude,
+		LocalPortInclude:    policy.localPortInclude,
+		SharedPortInclude:   policy.sharedPortInclude,
 		FakeIPIPv4:          policy.fakeIPIPv4.IsValid(),
 		FakeIPIPv6:          policy.fakeIPIPv6.IsValid(),
 		IncludeSource:       len(policy.includeSource.ipv4)+len(policy.includeSource.ipv6) > 0,

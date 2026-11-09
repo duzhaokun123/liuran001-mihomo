@@ -17,7 +17,8 @@ func TestSharedIgnoresDisabledLocalTemplate(t *testing.T) {
 			DNSMode: "invalid", DataPlane: "invalid", CgroupPath: "relative",
 			IPv6Mode: "invalid", StateCapacity: maximumStateCapacity + 1,
 			BypassPortRange: []string{"invalid"}, IncludeUIDRange: []string{"invalid"},
-			IncludePackage: []string{"android-only"}, BypassRuleSet: []string{"missing"},
+			IncludePortRange: []string{"invalid"},
+			IncludePackage:   []string{"android-only"}, BypassRuleSet: []string{"missing"},
 		}}
 		if explicit {
 			options.Mode = ""

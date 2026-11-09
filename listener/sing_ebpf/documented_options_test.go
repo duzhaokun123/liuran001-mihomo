@@ -56,6 +56,9 @@ func TestReadmeDocumentedValues(t *testing.T) {
 	if _, err := parsePortRanges("local.bypass_port", []uint16{22}, []string{"1000:2000"}); err != nil {
 		t.Errorf("README 写的端口范围被拒绝: %v", err)
 	}
+	if _, err := parsePortRanges("local.include_port", []uint16{443}, []string{"8000:8100"}); err != nil {
+		t.Errorf("README 写的 include-port 被拒绝: %v", err)
+	}
 	// README 说 udp-timeout 默认 300 秒、最小 5 秒
 	if got := resolveUDPTimeout(0); got.Seconds() != 300 {
 		t.Errorf("udp-timeout 默认值是 %v，README 写的是 300s", got)

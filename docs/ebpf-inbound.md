@@ -105,6 +105,8 @@ listeners:
       exclude-package: []       # Android only
       bypass-port: []
       bypass-port-range: []   # "start:end"
+      include-port: []        # whitelist; mutually exclusive with bypass-port
+      include-port-range: []  # "start:end"
     shared:
       data-plane: packet_rewrite  # packet_rewrite (default) | socket_assign
       dns-mode: hijack
@@ -120,6 +122,8 @@ listeners:
       exclude-mac-address: []
       bypass-port: []
       bypass-port-range: []
+      include-port: []
+      include-port-range: []
 ```
 
 The same listener can also be written the way sing-box and the upstream eBPF
@@ -201,6 +205,26 @@ Field behavior:
 - Android only: `include-android-user`, `include-package`, `exclude-package`.
 - `bypass-port`, `bypass-port-range` (per role): destination ports that are
   never intercepted.
+- `include-port`, `include-port-range` (per role): the inverse policy. When
+  set, only the listed destination ports are intercepted and every other port
+  passes through untouched. It is mutually exclusive with `bypass-port` in the
+  same role and setting both fails listener startup. Both keys expand to one
+  map entry per port per enabled protocol, so the fixed 4096-entry map holds
+  2048 ports with `network: [tcp, udp]` and 4096 ports with a single protocol;
+  going over fails startup with the compiled entry count. The port decision
+  sits after `bypass-exclude` and fake-IP, which still force interception; the
+  remaining bypass dimensions (`bypass-private-address`, host addresses,
+  `bypass-rule-set`) are evaluated later, so a whitelisted port is still
+  subject to them.
+- Port policy and DNS hijacking are evaluated in different orders by the two
+  data planes, so an `include-port` list that omits 53 behaves differently.
+  The cgroup plane decides the port first: with `dns-mode: hijack`, port 53
+  that is not in the include list is bypassed, so queries are not hijacked and
+  fake-IP answers stop reaching the proxy. The TC planes decide
+  `dns_selected` first, so hijacked DNS is still intercepted. Add 53 to the
+  include list where the cgroup plane must keep hijacking DNS. This ordering
+  is unchanged by the port policy itself and applies to `bypass-port` the same
+  way.
 - `shared.data-plane`: `packet_rewrite` rewrites the destination at ingress
   and restores it at egress and needs Ethernet framing; `socket_assign`
   preserves the original tuple and assigns packets to the listener with

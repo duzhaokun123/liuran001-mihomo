@@ -79,7 +79,11 @@ INLINE bool shared_port_bypassed(
         .protocol = protocol,
         .port = destination_port,
     };
-    return map_lookup(&shared_bypass_port, &key) != 0;
+    bool matched = map_lookup(&shared_bypass_port, &key) != 0;
+    // An include policy lists the only ports that are intercepted, so a miss
+    // bypasses instead of a hit.
+    if ((control->flags & SB_SHARED_FLAG_PORT_INCLUDE) != 0U) return !matched;
+    return matched;
 }
 
 INLINE bool ipv4_client_selected(

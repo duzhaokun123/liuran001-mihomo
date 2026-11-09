@@ -36,6 +36,10 @@
 #define SB_EBPF_CGROUP_FLAG_FAKEIP_IPV4 (1U << 15U)
 #define SB_EBPF_CGROUP_FLAG_FAKEIP_IPV6 (1U << 16U)
 #define SB_EBPF_CGROUP_FLAG_BYPASS_PORT (1U << 17U)
+// SB_EBPF_CGROUP_FLAG_PORT_INCLUDE inverts the bypass port map: a flow is
+// bypassed unless its (protocol, port) key is present. Set together with
+// SB_EBPF_CGROUP_FLAG_BYPASS_PORT.
+#define SB_EBPF_CGROUP_FLAG_PORT_INCLUDE (1U << 18U)
 struct sb_ebpf_cgroup_control {
     __u32 flags;
 	__u32 reserved;

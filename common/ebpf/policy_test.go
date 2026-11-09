@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"net/netip"
 	"slices"
+	"strings"
 	"testing"
 	"unsafe"
 )
@@ -191,4 +192,78 @@ func uidMatchesPrefixes(uid uint32, entries []uidLPMKey) bool {
 		}
 	}
 	return false
+}
+
+func TestCompilePortPolicyIncludeMode(t *testing.T) {
+	entries, include, err := compilePortPolicy("local",
+		[]PortRange{{Start: 443, End: 443}}, nil, true, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !include {
+		t.Fatal("an include list did not select include mode")
+	}
+	if len(entries) != 2 || entries[0] != (tcPortKey{Protocol: ProtocolTCP, Port: 443}) ||
+		entries[1] != (tcPortKey{Protocol: ProtocolUDP, Port: 443}) {
+		t.Fatalf("unexpected include entries: %+v", entries)
+	}
+
+	entries, include, err = compilePortPolicy("local", nil,
+		[]PortRange{{Start: 22, End: 22}}, true, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if include {
+		t.Fatal("a bypass list selected include mode")
+	}
+	if len(entries) != 1 || entries[0] != (tcPortKey{Protocol: ProtocolTCP, Port: 22}) {
+		t.Fatalf("unexpected bypass entries: %+v", entries)
+	}
+}
+
+func TestCompilePortPolicyMutualExclusion(t *testing.T) {
+	_, _, err := compilePortPolicy("shared",
+		[]PortRange{{Start: 443, End: 443}}, []PortRange{{Start: 22, End: 22}}, true, true)
+	if err == nil {
+		t.Fatal("include and bypass port lists were accepted together")
+	}
+	if message := err.Error(); !strings.Contains(message, "mutually exclusive") ||
+		!strings.Contains(message, "shared") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestCompilePortPolicyCapacityReportsEntryCount(t *testing.T) {
+	// One wide range with both protocols enabled compiles to twice the port
+	// count, which is what the map capacity limits.
+	_, _, err := compilePortPolicy("local", []PortRange{{Start: 1, End: 4096}}, nil, true, true)
+	if err == nil {
+		t.Fatal("oversized port policy was accepted")
+	}
+	if message := err.Error(); !strings.Contains(message, "8192 > 4096") {
+		t.Fatalf("capacity error did not report the compiled entry count: %v", err)
+	}
+	if _, _, err := compilePortPolicy("local", []PortRange{{Start: 0, End: 22}}, nil, true, true); err == nil {
+		t.Fatal("port 0 was accepted")
+	}
+}
+
+func TestCompilePolicyIncludePortSnapshot(t *testing.T) {
+	policy, err := CompilePolicy(PolicyConfig{
+		EnableTCP:        true,
+		LocalIncludePort: []PortRange{{Start: 443, End: 443}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !policy.localPortInclude || policy.sharedPortInclude {
+		t.Fatalf("include mode leaked across roles: %+v", policy)
+	}
+	if len(policy.localBypassPortEntries) != 1 ||
+		policy.localBypassPortEntries[0] != (tcPortKey{Protocol: ProtocolTCP, Port: 443}) {
+		t.Fatalf("unexpected local port entries: %+v", policy.localBypassPortEntries)
+	}
+	if len(policy.sharedBypassPortEntries) != 0 {
+		t.Fatalf("shared role kept local entries: %+v", policy.sharedBypassPortEntries)
+	}
 }

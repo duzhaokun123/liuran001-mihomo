@@ -83,6 +83,7 @@ type cgroupRuntime struct {
 	bypass_ipv4_policy          bool
 	bypass_ipv6_policy          bool
 	bypass_port_policy          bool
+	port_include_policy         bool
 
 	// displaced holds, per slot, the program another owner had attached
 	// exclusively and the exclusive fallback replaced; detach puts it back.
@@ -250,7 +251,8 @@ func PrepareCgroup(config CgroupConfig) (*CgroupBackend, error) {
 		uid_default_bypass:       uidDefaultBypass,
 		bypass_ipv4_policy:       policy.local.EnableBypassCIDR && redirectIPv4.IsValid(),
 		bypass_ipv6_policy:       policy.local.EnableBypassCIDR && redirectIPv6.IsValid(),
-		bypass_port_policy:       len(policy.localBypassPortEntries) > 0,
+		bypass_port_policy:       len(policy.localBypassPortEntries) > 0 || policy.localPortInclude,
+		port_include_policy:      policy.localPortInclude,
 		socket_release_supported: socketReleaseSupported,
 		coarse_time_supported:    coarseTimeSupported,
 	}
