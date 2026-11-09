@@ -51,46 +51,51 @@ type EBPFLocal struct {
 	IncludeAndroidUser   []int          `json:"include-android-user" yaml:"include-android-user" inbound:"include-android-user,omitempty"`
 	IncludePackage       []string       `json:"include-package" yaml:"include-package" inbound:"include-package,omitempty"`
 	ExcludePackage       []string       `json:"exclude-package" yaml:"exclude-package" inbound:"exclude-package,omitempty"`
-	BypassPort           []uint16       `json:"bypass-port" yaml:"bypass-port" inbound:"bypass-port,omitempty"`
-	BypassPortRange      []string       `json:"bypass-port-range" yaml:"bypass-port-range" inbound:"bypass-port-range,omitempty"`
+	BypassPort           []uint16       `json:"exclude-port" yaml:"exclude-port" inbound:"exclude-port,omitempty"`
+	BypassPortRange      []string       `json:"exclude-port-range" yaml:"exclude-port-range" inbound:"exclude-port-range,omitempty"`
 	// IncludePort restricts interception to the listed destination ports;
 	// every other port passes through untouched. It is mutually exclusive
-	// with BypassPort, and needs the same per-port protocol expansion, so the
-	// 4096-entry map capacity bounds it too.
+	// with the exclude-port keys, and needs the same per-port protocol
+	// expansion, so the 4096-entry map capacity bounds it too.
 	IncludePort      []uint16 `json:"include-port" yaml:"include-port" inbound:"include-port,omitempty"`
 	IncludePortRange []string `json:"include-port-range" yaml:"include-port-range" inbound:"include-port-range,omitempty"`
 
 	// Legacy keys, see EBPF.
 	IPv6Mode      string `json:"ipv6-mode" yaml:"ipv6-mode" inbound:"ipv6-mode,omitempty"`
 	StateCapacity uint32 `json:"state-capacity" yaml:"state-capacity" inbound:"state-capacity,omitempty"`
+
+	// Legacy port keys, folded into BypassPort and BypassPortRange by the
+	// listener unless the exclude-port keys are set.
+	LegacyBypassPort      []uint16 `json:"bypass-port,omitempty" yaml:"bypass-port" inbound:"bypass-port,omitempty"`
+	LegacyBypassPortRange []string `json:"bypass-port-range,omitempty" yaml:"bypass-port-range" inbound:"bypass-port-range,omitempty"`
 }
 
 type EBPFShared struct {
-	Enable               *bool          `json:"enable" yaml:"enable" inbound:"enable,omitempty"`
-	Enabled              *bool          `json:"enabled" yaml:"enabled" inbound:"enabled,omitempty"`
-	BypassRuleSet        []string       `json:"bypass-rule-set" yaml:"bypass-rule-set" inbound:"bypass-rule-set,omitempty"`
-	BypassExclude        []netip.Prefix `json:"bypass-exclude" yaml:"bypass-exclude" inbound:"bypass-exclude,omitempty"`
-	DataPlane            string         `json:"data-plane" yaml:"data-plane" inbound:"data-plane,omitempty"`
-	DNSMode              string         `json:"dns-mode" yaml:"dns-mode" inbound:"dns-mode,omitempty"`
-	Interface            []string       `json:"interface" yaml:"interface" inbound:"interface,omitempty"`
+	Enable        *bool          `json:"enable" yaml:"enable" inbound:"enable,omitempty"`
+	Enabled       *bool          `json:"enabled" yaml:"enabled" inbound:"enabled,omitempty"`
+	BypassRuleSet []string       `json:"bypass-rule-set" yaml:"bypass-rule-set" inbound:"bypass-rule-set,omitempty"`
+	BypassExclude []netip.Prefix `json:"bypass-exclude" yaml:"bypass-exclude" inbound:"bypass-exclude,omitempty"`
+	DataPlane     string         `json:"data-plane" yaml:"data-plane" inbound:"data-plane,omitempty"`
+	DNSMode       string         `json:"dns-mode" yaml:"dns-mode" inbound:"dns-mode,omitempty"`
+	Interface     []string       `json:"interface" yaml:"interface" inbound:"interface,omitempty"`
 	// AllowDefaultUpstream keeps entries of Interface attached even while the
 	// interface is the default upstream. By default such an interface is
 	// skipped, which guards a router whose WAN is also listed by mistake but
 	// breaks a single-armed gateway whose one and only NIC is both the
 	// downstream and the upstream.
-	AllowDefaultUpstream  *bool          `json:"allow-default-upstream" yaml:"allow-default-upstream" inbound:"allow-default-upstream,omitempty"`
+	AllowDefaultUpstream *bool          `json:"allow-default-upstream" yaml:"allow-default-upstream" inbound:"allow-default-upstream,omitempty"`
 	IPv6                 *bool          `json:"ipv6" yaml:"ipv6" inbound:"ipv6,omitempty"`
 	BypassPrivateAddress *bool          `json:"bypass-private-address" yaml:"bypass-private-address" inbound:"bypass-private-address,omitempty"`
 	IncludeSourceCIDR    []netip.Prefix `json:"include-source-cidr" yaml:"include-source-cidr" inbound:"include-source-cidr,omitempty"`
 	ExcludeSourceCIDR    []netip.Prefix `json:"exclude-source-cidr" yaml:"exclude-source-cidr" inbound:"exclude-source-cidr,omitempty"`
 	IncludeMACAddress    []string       `json:"include-mac-address" yaml:"include-mac-address" inbound:"include-mac-address,omitempty"`
 	ExcludeMACAddress    []string       `json:"exclude-mac-address" yaml:"exclude-mac-address" inbound:"exclude-mac-address,omitempty"`
-	BypassPort           []uint16       `json:"bypass-port" yaml:"bypass-port" inbound:"bypass-port,omitempty"`
-	BypassPortRange      []string       `json:"bypass-port-range" yaml:"bypass-port-range" inbound:"bypass-port-range,omitempty"`
+	BypassPort           []uint16       `json:"exclude-port" yaml:"exclude-port" inbound:"exclude-port,omitempty"`
+	BypassPortRange      []string       `json:"exclude-port-range" yaml:"exclude-port-range" inbound:"exclude-port-range,omitempty"`
 	// IncludePort restricts interception to the listed destination ports;
 	// every other port passes through untouched. It is mutually exclusive
-	// with BypassPort, and needs the same per-port protocol expansion, so the
-	// 4096-entry map capacity bounds it too.
+	// with the exclude-port keys, and needs the same per-port protocol
+	// expansion, so the 4096-entry map capacity bounds it too.
 	IncludePort      []uint16 `json:"include-port" yaml:"include-port" inbound:"include-port,omitempty"`
 	IncludePortRange []string `json:"include-port-range" yaml:"include-port-range" inbound:"include-port-range,omitempty"`
 
@@ -98,6 +103,11 @@ type EBPFShared struct {
 	IPv6Mode      string             `json:"ipv6-mode" yaml:"ipv6-mode" inbound:"ipv6-mode,omitempty"`
 	StateCapacity uint32             `json:"state-capacity" yaml:"state-capacity" inbound:"state-capacity,omitempty"`
 	Advanced      EBPFSharedAdvanced `json:"advanced" yaml:"advanced" inbound:"advanced,omitempty"`
+
+	// Legacy port keys, folded into BypassPort and BypassPortRange by the
+	// listener unless the exclude-port keys are set.
+	LegacyBypassPort      []uint16 `json:"bypass-port,omitempty" yaml:"bypass-port" inbound:"bypass-port,omitempty"`
+	LegacyBypassPortRange []string `json:"bypass-port-range,omitempty" yaml:"bypass-port-range" inbound:"bypass-port-range,omitempty"`
 }
 
 // EBPFSharedAdvanced is the legacy `shared.advanced` block. tc-priority moved

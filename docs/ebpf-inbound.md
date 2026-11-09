@@ -103,9 +103,9 @@ listeners:
       include-android-user: []  # Android only
       include-package: []       # Android only
       exclude-package: []       # Android only
-      bypass-port: []
-      bypass-port-range: []   # "start:end"
-      include-port: []        # whitelist; mutually exclusive with bypass-port
+      exclude-port: []
+      exclude-port-range: []  # "start:end"
+      include-port: []        # whitelist; mutually exclusive with exclude-port
       include-port-range: []  # "start:end"
     shared:
       data-plane: packet_rewrite  # packet_rewrite (default) | socket_assign
@@ -120,8 +120,8 @@ listeners:
       exclude-source-cidr: []
       include-mac-address: []
       exclude-mac-address: []
-      bypass-port: []
-      bypass-port-range: []
+      exclude-port: []
+      exclude-port-range: []
       include-port: []
       include-port-range: []
 ```
@@ -203,11 +203,14 @@ Field behavior:
 - `include-uid`, `include-uid-range`, `exclude-uid`, `exclude-uid-range`:
   UID-based interception policy for the local role. Ranges use `start:end`.
 - Android only: `include-android-user`, `include-package`, `exclude-package`.
-- `bypass-port`, `bypass-port-range` (per role): destination ports that are
-  never intercepted.
+- `exclude-port`, `exclude-port-range` (per role): destination ports that are
+  never intercepted. The previous `bypass-port` / `bypass-port-range` spellings
+  are still accepted: when the new key is unset they are folded into
+  `exclude-port` / `exclude-port-range` and reported at startup, and when both
+  spellings are set the legacy key is ignored with a note.
 - `include-port`, `include-port-range` (per role): the inverse policy. When
   set, only the listed destination ports are intercepted and every other port
-  passes through untouched. It is mutually exclusive with `bypass-port` in the
+  passes through untouched. It is mutually exclusive with `exclude-port` in the
   same role and setting both fails listener startup. Both keys expand to one
   map entry per port per enabled protocol, so the fixed 4096-entry map holds
   2048 ports with `network: [tcp, udp]` and 4096 ports with a single protocol;
@@ -223,7 +226,7 @@ Field behavior:
   fake-IP answers stop reaching the proxy. The TC planes decide
   `dns_selected` first, so hijacked DNS is still intercepted. Add 53 to the
   include list where the cgroup plane must keep hijacking DNS. This ordering
-  is unchanged by the port policy itself and applies to `bypass-port` the same
+  is unchanged by the port policy itself and applies to `exclude-port` the same
   way.
 - `shared.data-plane`: `packet_rewrite` rewrites the destination at ingress
   and restores it at egress and needs Ethernet framing; `socket_assign`

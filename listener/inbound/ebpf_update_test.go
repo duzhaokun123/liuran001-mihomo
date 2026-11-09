@@ -152,6 +152,7 @@ func TestEBPFUpdateRefusesWhatItCannotApply(t *testing.T) {
 		{name: "shared section", mutate: func(o *EBPFOption) { o.Shared.Interface = []string{"wlan0"} }},
 		{name: "local bypass-exclude", mutate: func(o *EBPFOption) { o.Local.BypassExclude = []netip.Prefix{netip.MustParsePrefix("100.64.0.0/10")} }},
 		{name: "local include-port", mutate: func(o *EBPFOption) { o.Local.IncludePort = []uint16{443} }},
+		{name: "local exclude-port", mutate: func(o *EBPFOption) { o.Local.BypassPort = []uint16{22} }},
 		{name: "shared include-port-range", mutate: func(o *EBPFOption) { o.Shared.IncludePortRange = []string{"8000:8100"} }},
 		{name: "shared bypass-exclude", mutate: func(o *EBPFOption) {
 			o.Shared.BypassExclude = []netip.Prefix{netip.MustParsePrefix("fd7a:115c:a1e0::/48")}

@@ -133,10 +133,10 @@ func CompilePolicy(config PolicyConfig) (CompiledPolicy, error) {
 // the data planes encode as a flag that inverts the lookup result.
 func compilePortPolicy(scope string, includePorts, bypassPorts []PortRange, enableTCP, enableUDP bool) ([]tcPortKey, bool, error) {
 	if len(includePorts) > 0 && len(bypassPorts) > 0 {
-		return nil, false, E.New(scope, ".include-port and ", scope, ".bypass-port are mutually exclusive")
+		return nil, false, E.New(scope, ".include-port and ", scope, ".exclude-port are mutually exclusive")
 	}
 	include := len(includePorts) > 0
-	kind := "bypass"
+	kind := "exclude"
 	ranges := bypassPorts
 	if include {
 		kind = "include"

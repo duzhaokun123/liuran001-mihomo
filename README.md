@@ -124,7 +124,7 @@ listeners:
       bypass-private-address: true    # 是否放行私网地址（默认 true）
       include-uid: [0, 1000]          # 仅接管指定 UID（可选）
       exclude-uid: [1052]             # 排除指定 UID（可选）
-      bypass-port: [22]               # 本机直连端口
+      exclude-port: [22]              # 本机直连端口
 
     # 下联转发接管配置（旁路由 / 热点网关）
     shared:
@@ -140,7 +140,7 @@ listeners:
       exclude-source-cidr: []         # 排除特定来源网段
       include-mac-address: []         # 按 MAC 过滤客户端（优先级高于 CIDR）
       exclude-mac-address: []
-      bypass-port: []                 # 下联直连端口
+      exclude-port: []                # 下联直连端口
 ```
 
 #### eBPF 关键注意事项

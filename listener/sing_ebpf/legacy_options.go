@@ -45,9 +45,10 @@ func resolveUDPTimeout(configured int64) time.Duration {
 //
 // The old surface had dns-mode and bypass-private-address at the top level,
 // `ipv6-mode: auto|always|off` strings in both sections, `state-capacity` per
-// section, and `shared.advanced.tc-priority`. Each is mapped onto its current
-// equivalent only when the new key is unset, so a config that already uses the
-// new keys is never overridden by a leftover legacy one.
+// section, `shared.advanced.tc-priority`, and bypass-port/bypass-port-range for
+// the ports now called exclude-port/exclude-port-range. Each is mapped onto its
+// current equivalent only when the new key is unset, so a config that already
+// uses the new keys is never overridden by a leftover legacy one.
 func applyLegacyOptions(options LC.EBPF) (LC.EBPF, []string, error) {
 	var notes []string
 	options, err := resolveEnableAliases(options)
@@ -67,6 +68,10 @@ func applyLegacyOptions(options LC.EBPF) (LC.EBPF, []string, error) {
 	if !sharedEnabled {
 		options.Shared = LC.EBPFShared{Enabled: options.Shared.Enabled}
 	}
+	foldLegacyPortKeys("local", &options.Local.BypassPort, &options.Local.BypassPortRange,
+		options.Local.LegacyBypassPort, options.Local.LegacyBypassPortRange, &notes)
+	foldLegacyPortKeys("shared", &options.Shared.BypassPort, &options.Shared.BypassPortRange,
+		options.Shared.LegacyBypassPort, options.Shared.LegacyBypassPortRange, &notes)
 	if options.DNSMode != "" {
 		if localEnabled && options.Local.DNSMode == "" {
 			options.Local.DNSMode = options.DNSMode
@@ -134,6 +139,34 @@ func applyLegacyOptions(options LC.EBPF) (LC.EBPF, []string, error) {
 		notes = append(notes, "tcp-splice is ignored: the kernel TCP splice fast path was removed with the unified TC data plane")
 	}
 	return options, notes, nil
+}
+
+// foldLegacyPortKeys maps bypass-port/bypass-port-range onto the exclude-port
+// keys that replaced them. The current keys win when both spellings are set,
+// like every other legacy key above, and the ignored legacy value gets one
+// note so the operator knows it is no longer doing anything.
+func foldLegacyPortKeys(
+	section string,
+	ports *[]uint16, ranges *[]string,
+	legacyPorts []uint16, legacyRanges []string,
+	notes *[]string,
+) {
+	if len(legacyPorts) > 0 {
+		if len(*ports) > 0 {
+			*notes = append(*notes, section+".exclude-port is set; "+section+".bypass-port was ignored")
+		} else {
+			*ports = legacyPorts
+			*notes = append(*notes, section+".bypass-port is deprecated; use "+section+".exclude-port")
+		}
+	}
+	if len(legacyRanges) > 0 {
+		if len(*ranges) > 0 {
+			*notes = append(*notes, section+".exclude-port-range is set; "+section+".bypass-port-range was ignored")
+		} else {
+			*ranges = legacyRanges
+			*notes = append(*notes, section+".bypass-port-range is deprecated; use "+section+".exclude-port-range")
+		}
+	}
 }
 
 // legacyIPv6Mode maps the old three-state string onto the current boolean. The

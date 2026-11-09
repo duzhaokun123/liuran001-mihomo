@@ -53,7 +53,7 @@ func TestReadmeDocumentedValues(t *testing.T) {
 		[]string{"aa:bb:cc:dd:ee:ff", "11:22:33:44:55:66"}); err != nil {
 		t.Errorf("README 写的 MAC 格式被拒绝: %v", err)
 	}
-	if _, err := parsePortRanges("local.bypass_port", []uint16{22}, []string{"1000:2000"}); err != nil {
+	if _, err := parsePortRanges("local.exclude_port", []uint16{22}, []string{"1000:2000"}); err != nil {
 		t.Errorf("README 写的端口范围被拒绝: %v", err)
 	}
 	if _, err := parsePortRanges("local.include_port", []uint16{443}, []string{"8000:8100"}); err != nil {
