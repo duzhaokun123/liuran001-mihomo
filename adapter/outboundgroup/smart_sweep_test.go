@@ -367,7 +367,7 @@ func TestACleanCloseOnABlockedNodeIsReportedAsChecked(t *testing.T) {
 				Host: "probe.example.com", WildcardTarget: wildcardTarget,
 				SmartBlock: "normal", NetWork: C.TCP,
 			}
-			_, isDegraded, checked, blockCode := s.checkNodeQuality(s.readTargetState(metadata, node), metadata, blameTestProxy{name: node}, connQuality{err: nil, address: "probe.example.com:443", weight: 0.9, oldWeight: 0.9, duration: 1_000, uploadMB: 1.0, downloadMB: 1.0})
+			_, isDegraded, checked, blockCode, _ := s.checkNodeQuality(s.readTargetState(metadata, node), metadata, blameTestProxy{name: node}, connQuality{err: nil, address: "probe.example.com:443", weight: 0.9, oldWeight: 0.9, duration: 1_000, uploadMB: 1.0, downloadMB: 1.0})
 
 			if isDegraded || blockCode != smart.BlockNone {
 				t.Fatalf("a clean close was judged degraded=%v code=%d", isDegraded, blockCode)
@@ -405,7 +405,7 @@ func TestTheSafetyValveStillRefusesToRecordAFailure(t *testing.T) {
 		Host: "probe.example.com", WildcardTarget: wildcardTarget,
 		SmartBlock: "normal", NetWork: C.TCP,
 	}
-	_, isDegraded, checked, blockCode := s.checkNodeQuality(s.readTargetState(metadata, node), metadata, blameTestProxy{name: node}, connQuality{err: errors.New("connection reset"), address: "probe.example.com:443", weight: 0.9, oldWeight: 0.9, duration: 1_000, uploadMB: 1.0, downloadMB: 1.0})
+	_, isDegraded, checked, blockCode, _ := s.checkNodeQuality(s.readTargetState(metadata, node), metadata, blameTestProxy{name: node}, connQuality{err: errors.New("connection reset"), address: "probe.example.com:443", weight: 0.9, oldWeight: 0.9, duration: 1_000, uploadMB: 1.0, downloadMB: 1.0})
 
 	if isDegraded || blockCode != smart.BlockNone {
 		t.Fatalf("the valve recorded a blocking verdict: degraded=%v code=%d", isDegraded, blockCode)
@@ -443,7 +443,7 @@ func TestTheSafetyValveOnlyReportsClosesOnBlockedNodes(t *testing.T) {
 		Host: "probe.example.com", WildcardTarget: wildcardTarget,
 		SmartBlock: "normal", NetWork: C.TCP,
 	}
-	_, _, checked, _ := s.checkNodeQuality(s.readTargetState(metadata, healthy), metadata, blameTestProxy{name: healthy}, connQuality{err: nil, address: "probe.example.com:443", weight: 0.9, oldWeight: 0.9, duration: 1_000, uploadMB: 1.0, downloadMB: 1.0})
+	_, _, checked, _, _ := s.checkNodeQuality(s.readTargetState(metadata, healthy), metadata, blameTestProxy{name: healthy}, connQuality{err: nil, address: "probe.example.com:443", weight: 0.9, oldWeight: 0.9, duration: 1_000, uploadMB: 1.0, downloadMB: 1.0})
 	if checked {
 		t.Fatal("a clean close on an unblocked node was reported as checked, which writes a host-status update with nothing to clear")
 	}

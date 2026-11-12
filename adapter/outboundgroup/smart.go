@@ -96,6 +96,15 @@ const (
 	stalledConnectionGrace = 4 * time.Second
 	stalledProbeTTL        = 2 * time.Minute
 	udpFailureTTL          = 3 * time.Minute
+
+	// A node that accepts the flow and closes it before any payload comes back
+	// is unusable for that target, but the dial succeeded and the close arrives
+	// as a clean EOF, so neither a dial error nor the stalled window reports it.
+	// The window meets stalledConnectionGrace: past it the stalled rule takes
+	// over.
+	earlyCloseWindow       = stalledConnectionGrace
+	earlyCloseWeightFactor = 0.5
+
 	asnDiversityCacheLimit = 4096
 
 	siteKeyCacheLimit = 4096 // sites remembered as site keys, relearned after eviction
@@ -195,6 +204,7 @@ type targetState struct {
 type connQuality struct {
 	err            error
 	address        string // display string for the debug lines only
+	peerClosed     bool   // the node sent FIN before answering anything
 	weight         float64
 	oldWeight      float64
 	duration       int64
@@ -357,7 +367,7 @@ func (s *Smart) ListenPacketContext(ctx context.Context, metadata *C.Metadata) (
 					return nil, err
 				}
 				finalErr = err
-				s.submitConnectionStats(metadata.Clone(), proxy, connectTime, 0, 0, 0, 0, 0, 0, nil, nil, err, false)
+				s.submitConnectionStats(metadata.Clone(), proxy, connectTime, 0, 0, 0, 0, 0, 0, nil, nil, err, false, false)
 				continue
 			}
 
@@ -449,7 +459,7 @@ func (s *Smart) singleDialContext(ctx context.Context, proxy C.Proxy, metadata *
 		}
 		if !errors.Is(err, context.Canceled) && ctx.Err() == nil {
 			// metadata may be re-written by a later retry's selectProxies.
-			s.submitConnectionStats(metadata.Clone(), proxy, connectTime, 0, 0, 0, 0, 0, 0, nil, nil, err, false)
+			s.submitConnectionStats(metadata.Clone(), proxy, connectTime, 0, 0, 0, 0, 0, 0, nil, nil, err, false, false)
 		}
 		return nil, connectTime, err
 	}
@@ -1442,7 +1452,7 @@ func testUrlHostOf(raw string) string {
 
 func (s *Smart) recordConnectionStats(metadata *C.Metadata, proxy C.Proxy,
 	connectTime, latency, uploadTotal, downloadTotal, maxUploadRate, maxDownloadRate,
-	connectionDuration int64, tcpStats, windowStats *tcpstats.Stats, err error,
+	connectionDuration int64, tcpStats, windowStats *tcpstats.Stats, err error, peerClosed bool,
 ) {
 	if proxy.Type() == C.Compatible || proxy.Type() == C.Reject || proxy.Type() == C.Pass || proxy.Type() == C.RejectDrop {
 		return
@@ -1605,9 +1615,10 @@ func (s *Smart) recordConnectionStats(metadata *C.Metadata, proxy C.Proxy,
 	if s.selected == "" && metadata.SmartBlock != "blocked" && metadata.SmartBlock != "degraded" {
 		state = s.readTargetState(metadata, proxyName)
 	}
-	adjWeight, isDegraded, checked, blockCode := s.checkNodeQuality(state, metadata, proxy, connQuality{
+	adjWeight, isDegraded, checked, blockCode, earlyClose := s.checkNodeQuality(state, metadata, proxy, connQuality{
 		err:            err,
 		address:        addressDisplay,
+		peerClosed:     peerClosed,
 		weight:         calculatedWeight,
 		oldWeight:      oldWeight,
 		duration:       connectionDuration,
@@ -1627,6 +1638,12 @@ func (s *Smart) recordConnectionStats(metadata *C.Metadata, proxy C.Proxy,
 	failedBlock := s.markNodeFailure(metadata, proxyName, isDegraded, checked, blockCode, blockTTL)
 
 	newWeight := updateEMA(oldWeight, adjWeight)
+	if earlyClose {
+		// A hard step, not an EMA sample: the connection carried nothing back,
+		// and one EMA step from a healthy weight would leave the node ranked
+		// where it was. Two incidents put a healthy node under AllowedWeight.
+		newWeight = oldWeight * earlyCloseWeightFactor
+	}
 	atomicRecord.SetLastUsed(time.Now().Unix())
 	atomicRecord.SetWeight(weightType, newWeight)
 	statsSnapshot := atomicRecord.CreateStatsSnapshot(cacheKey)
@@ -1636,9 +1653,20 @@ func (s *Smart) recordConnectionStats(metadata *C.Metadata, proxy C.Proxy,
 	lock.Unlock()
 	locked = false
 
-	if failedBlock || (isDegraded && blockCode != smart.BlockStalled && blockCode != smart.BlockPacketLoss) {
+	degrade := failedBlock || (isDegraded && blockCode != smart.BlockStalled && blockCode != smart.BlockPacketLoss)
+	if degrade {
 		s.closeStalledConnections(metadata, proxyName, target)
+	}
+	if degrade || earlyClose {
+		// The pin names one exit per target but carries no weight, so a node the
+		// stats just penalized would stay pinned there. Dropping the pin lets the
+		// next dial rank the target again; the prefetch entry the dial reads
+		// first is brought down with it, otherwise the penalty would not steer
+		// anything until the next prefetch pass.
 		s.store.DeleteUnwrapResult(s.Name(), s.configName, s.unwrapKey(metadata))
+	}
+	if earlyClose {
+		s.store.PenalizePrefetchWeight(s.Name(), s.configName, target, isUDP, proxyName, earlyCloseWeightFactor)
 	}
 
 	if s.collectData {
@@ -1708,7 +1736,12 @@ func (s *Smart) registerClosureMetricsCallback(c C.Conn, proxy C.Proxy, metadata
 				closeErr = nil
 			}
 
-			s.submitConnectionStats(metadata, proxy, connectTime, latency, uploadTotal, downloadTotal, maxUploadRate, maxDownloadRate, connectionDuration, tcpStats, windowStats, closeErr, true)
+			// The node closed its side before sending anything. closeErr is nil
+			// for a clean EOF, so this is the only record that the peer, not the
+			// client, ended the flow.
+			peerClosed := readErr == io.EOF
+
+			s.submitConnectionStats(metadata, proxy, connectTime, latency, uploadTotal, downloadTotal, maxUploadRate, maxDownloadRate, connectionDuration, tcpStats, windowStats, closeErr, peerClosed, true)
 			return
 		}
 	})
@@ -1735,7 +1768,7 @@ func (s *Smart) registerPacketClosureMetricsCallback(pc C.PacketConn, proxy C.Pr
 			}
 
 			s.submitConnectionStats(metadata, proxy, connectTime, udpLatency.Load(),
-				uploadTotal, downloadTotal, maxUploadRate, maxDownloadRate, connectionDuration, nil, nil, closeErr, false)
+				uploadTotal, downloadTotal, maxUploadRate, maxDownloadRate, connectionDuration, nil, nil, closeErr, false, false)
 			return
 		}
 	})
@@ -1977,9 +2010,9 @@ func (s *Smart) readTargetState(metadata *C.Metadata, proxyName string) targetSt
 // checkNodeQuality turns one finished connection into its weight adjustment and the host
 // record to write; the store and the exit trackers are read by the caller, so this only
 // decides.
-func (s *Smart) checkNodeQuality(state targetState, metadata *C.Metadata, proxy C.Proxy, q connQuality) (float64, bool, bool, smart.BlockCode) {
+func (s *Smart) checkNodeQuality(state targetState, metadata *C.Metadata, proxy C.Proxy, q connQuality) (float64, bool, bool, smart.BlockCode, bool) {
 	if s.selected != "" {
-		return q.weight, false, false, 0
+		return q.weight, false, false, 0, false
 	}
 
 	proxyName := proxy.Name()
@@ -1988,28 +2021,51 @@ func (s *Smart) checkNodeQuality(state targetState, metadata *C.Metadata, proxy 
 	if metadata.SmartBlock == "blocked" {
 		log.Debugln("[Smart] Connection Group: [%s] - Node: [%s] - Network: [%s] - Address: [%s] detected manual block...",
 			s.Name(), proxyName, metadata.NetWork.String(), q.address)
-		return q.weight, true, true, smart.BlockManual
+		return q.weight, true, true, smart.BlockManual, false
 	}
 
 	// force-closed connection, skip quality check to avoid erroneous downgrade
 	if metadata.SmartBlock == "degraded" {
-		return q.oldWeight, false, false, 0
+		return q.oldWeight, false, false, 0, false
 	}
 
 	if state.blocked {
-		return q.weight, false, q.err == nil && state.failNodes[proxyName] != smart.BlockNone, smart.BlockNone
+		return q.weight, false, q.err == nil && state.failNodes[proxyName] != smart.BlockNone, smart.BlockNone, false
 	}
 
 	if q.weight > 0 && q.weight < smart.AllowedWeight {
-		return q.weight, true, true, smart.BlockLowWeight
+		return q.weight, true, true, smart.BlockLowWeight, false
 	}
 
 	if q.err != nil {
-		return q.weight, false, true, smart.BlockDialFailure
+		return q.weight, false, true, smart.BlockDialFailure, false
 	}
 
 	if state.failNodes[proxyName] != 0 {
-		return q.weight, false, true, smart.BlockNone
+		return q.weight, false, true, smart.BlockNone, false
+	}
+
+	// A node that drops the flow it just accepted, before any payload comes back,
+	// is unusable for that target: the dial succeeded and the close is a clean
+	// FIN, so no dial error reports it and the stalled window below never sees
+	// it. The client has to have sent something, otherwise the node was never
+	// asked anything and cannot be at fault.
+	if q.err == nil && q.peerClosed && q.duration <= earlyCloseWindow.Milliseconds() &&
+		q.uploadMB > 0 && q.downloadMB == 0 && metadata.NetWork != C.UDP {
+		address := metadata.Host
+		switch {
+		case address == "":
+			address = metadata.DstIP.String()
+		case metadata.DstPort != 0:
+			address = fmt.Sprintf("%s:%d", address, metadata.DstPort)
+		}
+		log.Errorln("[Smart] Early close: Group [%s] - Node [%s] - Network [%s] - Target [%s] - Address [%s] - Duration [%s] - Up [%s] - Down [%s] - Weight [%.4f -> %.4f]",
+			s.Name(), proxyName, metadata.NetWork.String(), metadata.SmartTarget, address,
+			formatTimeUnit(float64(q.duration)),
+			formatTrafficUnit(q.uploadMB*1024*1024, false),
+			formatTrafficUnit(q.downloadMB*1024*1024, false),
+			q.oldWeight, q.oldWeight*earlyCloseWeightFactor)
+		return q.weight, false, false, smart.BlockNone, true
 	}
 
 	// probes need a Host, so a silent answer on an IP-only target counts on every port
@@ -2017,7 +2073,7 @@ func (s *Smart) checkNodeQuality(state targetState, metadata *C.Metadata, proxy 
 		metadata.NetWork != C.UDP && (metadata.DstPort == 443 || metadata.Host == "") {
 		log.Debugln("[Smart] Connection Group: [%s] - Node: [%s] - Network: [%s] - Address: [%s] stalled without a response...",
 			s.Name(), proxyName, metadata.NetWork.String(), q.address)
-		return q.weight, true, true, smart.BlockStalled
+		return q.weight, true, true, smart.BlockStalled, false
 	}
 
 	// a suspected exit re-checks the suspicion: it carries traffic only when the rest failed;
@@ -2025,7 +2081,7 @@ func (s *Smart) checkNodeQuality(state targetState, metadata *C.Metadata, proxy 
 	eligible := smart.ResponseProbeEligible(metadata, q.downloadMB, metadata.NetWork == C.UDP)
 	if state.suspected || eligible {
 		s.probeAfterClose(metadata, proxy, eligible)
-		return q.weight, false, false, 0
+		return q.weight, false, false, 0, false
 	}
 
 	// a strike acts only on a judged window the sampler released; the decaying ema alone
@@ -2033,10 +2089,10 @@ func (s *Smart) checkNodeQuality(state targetState, metadata *C.Metadata, proxy 
 	if q.strikeEvidence && (q.strikeRate >= 0.1 || (q.strikeRate >= 0.05 && q.emaLossRate >= 0.05)) {
 		log.Debugln("[Smart] Connection Group: [%s] - Node: [%s] - Network: [%s] - Address: [%s] detected high packet loss [window: %.2f%%, read: %.2f%%, history EMA: %.2f%%]...",
 			s.Name(), proxyName, metadata.NetWork.String(), q.address, q.strikeRate*100, q.lossRate*100, q.emaLossRate*100)
-		return q.weight, true, true, smart.BlockPacketLoss
+		return q.weight, true, true, smart.BlockPacketLoss, false
 	}
 
-	return q.weight, false, false, 0
+	return q.weight, false, false, 0, false
 }
 
 // markNodeFailure records a node failure for the host and for the target, otherwise every
@@ -2588,7 +2644,7 @@ func (s *Smart) admitConnectionStats(metadata *C.Metadata, err error, now int64)
 
 func (s *Smart) submitConnectionStats(metadata *C.Metadata, proxy C.Proxy,
 	connectTime, latency, uploadTotal, downloadTotal, maxUploadRate, maxDownloadRate,
-	connectionDuration int64, tcpStats, windowStats *tcpstats.Stats, err error, markCloseFailure bool,
+	connectionDuration int64, tcpStats, windowStats *tcpstats.Stats, err error, peerClosed bool, markCloseFailure bool,
 ) bool {
 	if !s.beginBackgroundWork() {
 		return false
@@ -2603,7 +2659,7 @@ func (s *Smart) submitConnectionStats(metadata *C.Metadata, proxy C.Proxy,
 		if markCloseFailure && err != nil && metadata.SmartBlock != "degraded" {
 			s.markNodeFailure(metadata, proxy.Name(), true, true, smart.BlockDialFailure, 0)
 		}
-		s.recordConnectionStats(metadata, proxy, connectTime, latency, uploadTotal, downloadTotal, maxUploadRate, maxDownloadRate, connectionDuration, tcpStats, windowStats, err)
+		s.recordConnectionStats(metadata, proxy, connectTime, latency, uploadTotal, downloadTotal, maxUploadRate, maxDownloadRate, connectionDuration, tcpStats, windowStats, err, peerClosed)
 	}()
 	return true
 }

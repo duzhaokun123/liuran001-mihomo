@@ -3,6 +3,7 @@ package smart
 import (
 	"encoding/json"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -181,6 +182,87 @@ func (s *Store) GetPrefetchResult(group, config string, target string, isUDP boo
 	}
 
 	return nil, nil
+}
+
+// PenalizePrefetchWeight lowers one node's weight in the target's prefetch
+// entry and keeps the entry's dial order consistent with it. The dial path
+// reads the prefetch before the stats record, so a weight the stats path has
+// just lowered would otherwise keep steering dials until the next prefetch
+// pass. Both networks are carried through because the entry holds them
+// together; StorePrefetchResult writes only one of them, so it cannot be used
+// here without dropping the other.
+func (s *Store) PenalizePrefetchWeight(group, config, target string, isUDP bool, node string, factor float64) {
+	if target == "" || node == "" || factor <= 0 || factor >= 1 {
+		return
+	}
+
+	pm := PrefetchMap{UpdatedTime: time.Now().Unix()}
+	if nodes, weights := s.GetPrefetchResult(group, config, target, false); len(nodes) > 0 && len(nodes) == len(weights) {
+		pm.TCP = NodesWithWeights{Nodes: nodes, Weights: weights}
+	}
+	if nodes, weights := s.GetPrefetchResult(group, config, target, true); len(nodes) > 0 && len(nodes) == len(weights) {
+		pm.UDP = NodesWithWeights{Nodes: nodes, Weights: weights}
+	}
+	if len(pm.TCP.Nodes) == 0 && len(pm.UDP.Nodes) == 0 {
+		return
+	}
+
+	penalize := func(nw *NodesWithWeights) bool {
+		for i, name := range nw.Nodes {
+			if name != node {
+				continue
+			}
+			nw.Weights[i] *= factor
+			sortPrefetchByWeight(nw)
+			return true
+		}
+		return false
+	}
+	found := false
+	if isUDP {
+		found = penalize(&pm.UDP)
+	} else {
+		found = penalize(&pm.TCP)
+	}
+	if !found {
+		return
+	}
+
+	data, err := json.Marshal(pm)
+	if err != nil {
+		return
+	}
+
+	s.AppendToGlobalQueue(StoreOperation{
+		Type:   OpSavePrefetch,
+		Group:  group,
+		Config: config,
+		Target: target,
+		Data:   data,
+	})
+}
+
+// sortPrefetchByWeight restores the order the selection path expects: heaviest
+// first, with the name breaking ties so equal weights keep a stable order.
+func sortPrefetchByWeight(nw *NodesWithWeights) {
+	type pair struct {
+		node   string
+		weight float64
+	}
+	pairs := make([]pair, len(nw.Nodes))
+	for i := range nw.Nodes {
+		pairs[i] = pair{node: nw.Nodes[i], weight: nw.Weights[i]}
+	}
+	sort.SliceStable(pairs, func(i, j int) bool {
+		if pairs[i].weight != pairs[j].weight {
+			return pairs[i].weight > pairs[j].weight
+		}
+		return pairs[i].node < pairs[j].node
+	})
+	for i := range pairs {
+		nw.Nodes[i] = pairs[i].node
+		nw.Weights[i] = pairs[i].weight
+	}
 }
 
 func (s *Store) StoreUnwrapResult(group, config string, target string, proxies []C.Proxy) {
